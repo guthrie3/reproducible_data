@@ -1,0 +1,127 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+author: "Charles Guthrie"
+date: "January 9, 2016"
+output: 
+  html_document: 
+    keep_md: yes
+    number_sections: yes
+    toc: yes
+---
+
+#Overview
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the "quantified self" movement -- a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.  
+
+##Loading and preprocessing the data
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.  
+
+The data was downloaded from https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip on to a local drive for processing and analyses using the statistical program R (version 3.2.1).  The dataset consists of 17,568 observations and three variables--steps (number of steps taking in a 5-minute interval with missing values are coded as NA), date (the date on which the measurement was taken in YYYY-MM-DD format), and interval (identifier for the 5-minute interval in which measurement was taken).
+
+```{r echo = TRUE}
+###code for loading and inital processing of dataset
+##packages used: 
+library(dplyr)
+library(ggvis)
+
+##load data 
+wk1_data <- read.csv(file = "activity.csv", header = T, stringsAsFactors = F) 
+wk1_data <- tbl_df(wk1_data)
+wk1_data <- wk1_data %>% mutate(date = as.Date(date)) #convert character data type to date data type 
+str(wk1_data)
+summary(wk1_data)
+
+```
+
+#Questions
+The present dataset was used to answer the questions in the following sections.  
+
+##What is mean total number of steps taken per day?
+  
+
+```{r, echo=TRUE}
+##what is the mean total of steps taken per day?
+steps_daily <- wk1_data %>% group_by(date) %>% summarise(steps_daily = sum(steps, na.rm =T))
+steps_daily %>% ggvis(~steps_daily) %>% layer_histograms() %>% add_axis("x", title = "Graph 1: Step Daily")
+summary_steps_daily <- steps_daily %>% summarise(avg = mean(steps_daily, na.rm = T), median = median(steps_daily, na.rm =T))
+summary_steps_daily
+
+```
+
+The dataset was grouped by unique dates and each date's recorded steps were summed (graph 1 shows the distribution of the total steps).  The mean (`r summary_steps_daily$avg`) and median (`r summary_steps_daily$median`) were also calculated.
+
+
+##What is the average daily activity pattern?
+```{r echo=TRUE}
+##what is the average daily activity pattern? 
+avg_daily <- wk1_data %>% group_by(interval) %>% summarise(avg = mean(steps, na.rm = T))
+avg_daily %>% ggvis(~interval, ~avg) %>% layer_lines()
+#Calculate and report the mean and median of the total number of steps taken per day
+max_interval <- avg_daily[max(avg_daily$avg),]
+
+```
+
+A time series plot was created to display the average number of steps taken across the five-minute intervals (see Graph 2).  The five minute interval, on average across all days in the data, that contained the maxim number of steps was found to be `r max_interval[1]` at an average of `r max_interval[2]` steps. 
+
+##Imputing missing values
+A brief missing data analysis was conducted: the table below shows the counts of missing data (NA) by variable in the data. 
+
+```{r, echo = TRUE}
+##Imputing missing values and answer previous questions.
+wk1_data %>% summarise(NAs_steps = sum(is.na(steps)), NA_date = sum(is.na(date)), NA_interval = sum(is.na(interval))) #number of NAs by variable
+```
+
+   
+
+```{r, echo=TRUE}
+#aggregated averages by unique interval number 
+means_by_interval <- wk1_data %>% group_by(interval) %>% summarise(steps = mean(steps, na.rm = T)) %>% as.data.frame()
+#function to impute missing data with mean of corresponding interval group 
+impute_data <- function(steps, interval){
+  imputed_result <- NA
+  if(!is.na(steps)){
+    imputed_result <- c(steps)
+  }else{
+    imputed_result <- (means_by_interval[means_by_interval$interval==interval, "steps"])
+  }
+  return(imputed_result)
+}
+wk1_data_imputed <- wk1_data
+wk1_data_imputed$steps <- mapply(impute_data, wk1_data_imputed$steps, wk1_data_imputed$interval)
+wk1_data_imputed
+#
+steps_daily_imputed <- wk1_data_imputed %>% group_by(date) %>% summarise(steps_daily_imputed = sum(steps, na.rm = T))
+steps_daily_imputed %>% ggvis(~steps_daily_imputed) %>% layer_histograms() %>% add_axis("x", title = "Graph 3: Imputed Daily Steps Data")
+summary_steps_daily_imputed <- steps_daily_imputed %>% summarise(avg = mean(steps_daily_imputed, na.rm = T), median = median(steps_daily_imputed, na.rm = T))
+summary_steps_daily_imputed
+
+```
+
+Missing data was imputed by replacing missing values (i.e. NA) with the mean value from the observations aggregate interval group.  The previous questions were addressed with the imputed data. Graph 3 shows the distribution the total daily steps and the mean (`r summary_steps_daily_imputed$avg`) and median (`r summary_steps_daily_imputed$median`) were calculated for the imputed data.  Imputing the data with the chosen method made the distribution of the steps conform to a more normal distribution and may distort the interpretation of the data. 
+
+##Are there differences in activity patterns between weekdays and weekends?
+
+A line graph was created to explore the differences in activity patterns between weekdays and weekends (Graph 4).  The graph indicates that there are larger averages of steps during the early intervals during the weekdays when compared to weekends.  However, step averages are more consistent across intervals during the weekends.  
+
+```{r, echo = TRUE}
+##Are there differences in activity patterns between weekdays and weekends?
+#function to convert date variable into two-level factor variable
+working_for_the_weekend <- function(date) {
+  day <- weekdays(date)
+  if(day %in% c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")){
+    return("weekday")
+  }else if(day %in% c("Saturday", "Sunday")){
+    return("weekend")
+  }
+}
+
+wk1_data$day_factor <- sapply(wk1_data$date, FUN=working_for_the_weekend)
+wk1_data <- wk1_data %>% mutate(day_factor = factor(day_factor))
+wk1_data$day_factor %>% table()
+
+activity <- wk1_data %>% group_by(interval, day_factor) %>% summarise(avg = mean(steps, na.rm = T))
+activity %>% ggvis(~interval, ~avg, fill = ~day_factor, fillOpacity := .5) %>% group_by(day_factor) %>% layer_lines() %>% add_axis("x", title = "Graph 4: Weekend and Weekday Intervals")
+
+
+```
+
